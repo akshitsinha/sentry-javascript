@@ -1,6 +1,14 @@
 import { isObjectLike } from '@sentry/core';
+import { instrumentWorkersAiClient } from '@sentry/core';
 import type { CloudflareOptions } from '../../client';
-import { isD1Database, isDurableObjectNamespace, isJSRPC, isQueue, isR2Bucket } from '../../utils/isBinding';
+import {
+  isAiBinding,
+  isD1Database,
+  isDurableObjectNamespace,
+  isJSRPC,
+  isQueue,
+  isR2Bucket,
+} from '../../utils/isBinding';
 import { instrumentD1 } from './instrumentD1';
 import { appendRpcMeta } from '../../utils/rpcMeta';
 import { getEffectiveRpcPropagation } from '../../utils/rpcOptions';
@@ -24,6 +32,7 @@ const instrumentedBindings = new WeakMap<object, unknown>();
  * - Service bindings / JSRPC proxies
  * - Queue producers (via `send` + `sendBatch` duck-typing)
  * - R2 Buckets (via `head` + `put` + `createMultipartUpload` duck-typing)
+ * - Workers AI (via `run` + `gateway` + `toMarkdown` duck-typing)
  *
  * @param env - The Cloudflare env object to instrument
  * @param options - Optional CloudflareOptions to control RPC trace propagation
@@ -65,6 +74,12 @@ export function instrumentEnv<Env extends Record<string, unknown>>(env: Env, opt
       if (isR2Bucket(item)) {
         const bindingName = typeof prop === 'string' ? prop : String(prop);
         const instrumented = instrumentR2Bucket(item, bindingName);
+        instrumentedBindings.set(item, instrumented);
+        return instrumented;
+      }
+
+      if (isAiBinding(item)) {
+        const instrumented = instrumentWorkersAiClient(item);
         instrumentedBindings.set(item, instrumented);
         return instrumented;
       }
