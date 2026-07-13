@@ -116,6 +116,7 @@ export { denoPostgresIntegration } from './integrations/postgres';
 export { denoAmqplibIntegration } from './integrations/amqplib';
 export { denoDataloaderIntegration } from './integrations/dataloader';
 export { denoKnexIntegration } from './integrations/knex';
+export { denoMongoIntegration } from './integrations/mongo';
 export { denoContextIntegration } from './integrations/context';
 export { globalHandlersIntegration } from './integrations/globalhandlers';
 export { normalizePathsIntegration } from './integrations/normalizepaths';
