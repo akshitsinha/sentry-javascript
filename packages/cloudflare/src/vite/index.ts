@@ -4,6 +4,7 @@
 // The CJS rollup variant still emits this file, but `package.json` doesn't
 // expose it — same setup as `@sentry/server-utils/orchestrion/vite` itself.
 import { sentryOrchestrionPlugin } from '@sentry/server-utils/orchestrion/vite';
+import { sentryCloudflareAutoInstrumentPlugin } from './autoInstrument';
 
 /**
  * Options for {@link sentryCloudflareVitePlugin}.
@@ -27,6 +28,20 @@ export interface SentryCloudflareVitePluginOptions {
      * @experimental May change or be removed in any release.
      */
     useDiagnosticsChannelInjection?: boolean;
+    /**
+     * Enables build-time automatic instrumentation of supported dependencies
+     * (e.g. database clients like `mysql`) so the Sentry Cloudflare SDK can
+     * trace them without monkey-patching, which wouldn't work in workerd anyway.
+     *
+     * When enabled, the plugin injects `diagnostics_channel.tracingChannel`
+     * calls into the bundled packages and adds a generated registration module
+     * to the bundle, which the SDK picks up in `Sentry.withSentry()`. Both
+     * `vite build` and `vite dev` are instrumented.
+     *
+     * @default false
+     * @experimental May change or be removed in any release.
+     */
+    autoInstrumentation?: boolean;
   };
 }
 
@@ -62,9 +77,8 @@ export interface SentryCloudflareVitePluginOptions {
  * ```
  */
 export function sentryCloudflareVitePlugin(options: SentryCloudflareVitePluginOptions = {}) {
-  if (!options._experimental?.useDiagnosticsChannelInjection) {
-    return [];
-  }
-
-  return sentryOrchestrionPlugin({ registerIntegrations: true });
+  return [
+    ...(options._experimental?.useDiagnosticsChannelInjection ? sentryOrchestrionPlugin({ registerIntegrations: true }) : []),
+    ...(options._experimental?.autoInstrumentation ? [sentryCloudflareAutoInstrumentPlugin()] : []),
+  ];
 }
