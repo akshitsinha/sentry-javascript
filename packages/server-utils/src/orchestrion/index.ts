@@ -19,7 +19,7 @@ import { postgresJsChannelIntegration } from '../integrations/tracing-channel/po
 import { vercelAiChannelIntegration } from '../integrations/tracing-channel/vercel-ai';
 import { expressChannelIntegration } from '../integrations/tracing-channel/express';
 
-export { detectOrchestrionSetup, isOrchestrionInjected } from './detect';
+export { detectOrchestrionSetup, getRegisteredChannelIntegrations, isOrchestrionInjected } from './detect';
 // The `@nestjs/*` channel names live here alongside their transform config; the
 // listener that subscribes to them lives in `@sentry/nestjs`, which imports this.
 export { nestjsChannels } from './config/nestjs';
@@ -56,9 +56,9 @@ export type * from '../integrations/tracing-channel/graphql/graphql-types';
  * (OTel-parity) factory name.
  *
  * Single source of truth: add a new channel integration here and every consumer — the `@sentry/node`
- * opt-in helper (`experimentalUseDiagnosticsChannelInjection`) and its public
- * `diagnosticsChannelInjectionIntegrations()` map — picks it up automatically, so there's no separate
- * list to keep in sync.
+ * opt-in helper (`experimentalUseDiagnosticsChannelInjection`), its public
+ * `diagnosticsChannelInjectionIntegrations()` map, and the marker-based `registerChannelIntegrations()`
+ * below — picks it up automatically.
  *
  * NOTE: `ioredisChannelIntegration` and `redisChannelIntegration` are intentionally NOT here. They
  * only partially replace the composite OTel `Redis` integration and need the node SDK's redis cache
@@ -90,3 +90,18 @@ export const channelIntegrations = {
   graphqlIntegration: graphqlDiagnosticsChannelIntegration,
   kafkajsIntegration: kafkajsChannelIntegration,
 } as const;
+
+/**
+ * Puts the factories of all channel integrations onto the global orchestrion
+ * marker and marks the bundler injection as active, so
+ * `getRegisteredChannelIntegrations()` picks them up.
+ *
+ * Only meant to be called from the registration import that a bundler plugin
+ * injects into the app entry. Calling it statically from an SDK would keep the
+ * integration code in bundles that the plugin never instruments.
+ */
+export function registerChannelIntegrations(): void {
+  const marker = (globalThis.__SENTRY_ORCHESTRION__ = globalThis.__SENTRY_ORCHESTRION__ || {});
+  marker.bundler = true;
+  marker.integrations = Object.values(channelIntegrations);
+}

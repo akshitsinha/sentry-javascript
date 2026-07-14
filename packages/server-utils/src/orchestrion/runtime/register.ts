@@ -4,6 +4,7 @@ import * as Module from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { DEBUG_BUILD } from '../../debug-build';
 import { SENTRY_INSTRUMENTATIONS } from '../config';
+import type { OrchestrionMarker } from '../detect';
 
 export interface RegisterDiagnosticsChannelInjectionOptions {
   /**
@@ -15,11 +16,6 @@ export interface RegisterDiagnosticsChannelInjectionOptions {
    * location here; it is loaded through an opaque `createRequire` that bundlers can't trace.
    */
   tracingHooksDir?: string;
-}
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __SENTRY_ORCHESTRION__: { runtime?: boolean; bundler?: boolean } | undefined;
 }
 
 /** `Module.registerHooks` only became stable in Node 24.13 / 25.1 and Deno 2.8. */
@@ -52,7 +48,7 @@ function hasStableSyncModuleHooks(denoVersionString: string | undefined): boolea
  * `--import` hook or a bundler plugin already injected the channels.
  */
 export function registerDiagnosticsChannelInjection(options?: RegisterDiagnosticsChannelInjectionOptions): void {
-  const g = (globalThis.__SENTRY_ORCHESTRION__ ??= {});
+  const g: OrchestrionMarker = (globalThis.__SENTRY_ORCHESTRION__ ??= {});
 
   // Already injected (runtime --import hook or bundler plugin) — nothing to do.
   if (g.runtime) {
