@@ -1,4 +1,4 @@
-import { debug, GLOBAL_OBJ } from '@sentry/core';
+import { debug, GLOBAL_OBJ, type Integration } from '@sentry/core';
 
 /**
  * Whether orchestrion has injected the diagnostics channels into this process,
@@ -11,6 +11,23 @@ import { debug, GLOBAL_OBJ } from '@sentry/core';
  */
 export function isOrchestrionInjected(): boolean {
   return !!GLOBAL_OBJ.__SENTRY_ORCHESTRION__;
+}
+
+/**
+ * Returns fresh instances of the channel-subscriber integrations an injector
+ * registered on the global marker.
+ *
+ * SDKs that can't afford to ship the subscriber code unconditionally read the
+ * registry through this function instead of importing the integrations: no
+ * static import means bundlers drop the integration code entirely unless the
+ * injector put its registration module — and with it the integrations — into
+ * the bundle.
+ */
+export function getRegisteredChannelIntegrations(): Integration[] {
+  const marker = globalThis.__SENTRY_ORCHESTRION__;
+  const registered = marker?.integrations || [];
+
+  return registered.map(factory => factory());
 }
 
 /**

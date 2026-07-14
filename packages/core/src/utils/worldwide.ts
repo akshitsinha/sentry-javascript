@@ -12,6 +12,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import type { Integration } from '@sentry/core';
 import type { Carrier } from '../carrier';
 import type { SdkSource } from './env';
 
@@ -63,6 +64,8 @@ export type InternalGlobal = {
     runtime?: string[];
     /** Empty array signifies bundler plugin ran */
     bundler?: string[];
+    /** Integrations registered by the orchestrion injector */
+    integrations?: Array<() => Integration>;
   };
 } & Carrier;
 
