@@ -1,9 +1,17 @@
+import type { Integration } from '@sentry/core';
 import { debug } from '@sentry/core';
 import { DEBUG_BUILD } from '../debug-build';
 
+export interface OrchestrionMarker {
+  runtime?: boolean;
+  bundler?: boolean;
+  integrations?: Array<() => Integration>;
+  failedModules?: string[];
+}
+
 declare global {
   // eslint-disable-next-line no-var
-  var __SENTRY_ORCHESTRION__: { runtime?: boolean; bundler?: boolean } | undefined;
+  var __SENTRY_ORCHESTRION__: OrchestrionMarker | undefined;
 }
 
 /**
@@ -18,6 +26,47 @@ declare global {
 export function isOrchestrionInjected(): boolean {
   const marker = globalThis.__SENTRY_ORCHESTRION__;
   return !!(marker?.runtime || marker?.bundler);
+}
+
+/**
+ * Returns fresh instances of the channel-subscriber integrations an injector
+ * registered on the global marker.
+ *
+ * SDKs that can't afford to ship the subscriber code unconditionally read the
+ * registry through this function instead of importing the integrations: no
+ * static import means bundlers drop the integration code entirely unless the
+ * injector put its registration module — and with it the integrations — into
+ * the bundle.
+ */
+export function getRegisteredChannelIntegrations(): Integration[] {
+  const marker = globalThis.__SENTRY_ORCHESTRION__;
+  const registered = marker?.integrations || [];
+
+  warnAboutFailedModules(marker?.failedModules);
+
+  return registered.map(factory => factory());
+}
+
+// A failed transform means the package is in the bundle but its diagnostics
+// channels are not, so its integration is wired up yet records no spans.
+// Surface why (the bundler plugin also warns at build time). The
+// failed-modules list is fixed at build time, but this runs on every
+// `Sentry.init()` — which in Cloudflare is once per request — so remember which
+// packages we've already warned about and warn once per isolate instead of on
+// every request.
+const warnedFailedModules = new Set<string>();
+
+function warnAboutFailedModules(failedModules: string[] | undefined): void {
+  if (!DEBUG_BUILD || !failedModules?.length) return;
+
+  const unwarned = failedModules.filter(module => !warnedFailedModules.has(module));
+  if (!unwarned.length) return;
+
+  unwarned.forEach(module => warnedFailedModules.add(module));
+  debug.warn(
+    `[Sentry] The orchestrion code transform failed at build time for: ${unwarned.join(', ')}. ` +
+      'No spans will be recorded for these packages.',
+  );
 }
 
 /**
