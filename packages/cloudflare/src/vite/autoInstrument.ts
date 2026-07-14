@@ -93,16 +93,28 @@ export function sentryCloudflareAutoInstrumentPlugin(): UnknownPlugin {
         return undefined;
       }
 
+      const doClassNames = new Set(wranglerConfig.durableObjects.map(d => d.className));
       // Skip our registration import if the orchestrion plugin's own entry
       // injection already added it (build mode, when this module is the rollup
       // entry). Both injectors gate on the same `REGISTER_MODULE_ID` sentinel,
       // so at most one import lands.
       const prependBanner = code.includes(REGISTER_MODULE_ID) ? undefined : ORCHESTRION_REGISTRATION_BANNER;
       const result = applyAutoInstrumentTransforms(code, ast, {
+        doClassNames,
         optionsFn,
         optionsImport,
         prependBanner,
       });
+
+      const wrappedDoClasses = result?.wrappedDoClasses ?? new Set<string>();
+      const missing = [...doClassNames].filter(name => !wrappedDoClasses.has(name));
+      if (missing.length > 0) {
+        this.warn?.(
+          `[sentry] Could not auto-instrument Durable Object class(es) ${missing.join(', ')}: no matching ` +
+            'exported class declaration found in the worker entry (re-exports from other modules cannot be ' +
+            'wrapped automatically). Wrap them manually with `instrumentDurableObjectWithSentry`.',
+        );
+      }
 
       return result ?? undefined;
     },

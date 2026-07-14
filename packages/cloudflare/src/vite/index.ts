@@ -79,6 +79,6 @@ export interface SentryCloudflareVitePluginOptions {
 export function sentryCloudflareVitePlugin(options: SentryCloudflareVitePluginOptions = {}) {
   return [
     ...(options._experimental?.useDiagnosticsChannelInjection ? sentryOrchestrionPlugin({ registerIntegrations: true }) : []),
-    ...(options._experimental?.autoInstrumentation ? sentryCloudflareAutoInstrumentPlugin() : []),
+    ...(options._experimental?.autoInstrumentation ? [sentryCloudflareAutoInstrumentPlugin()] : []),
   ];
 }
