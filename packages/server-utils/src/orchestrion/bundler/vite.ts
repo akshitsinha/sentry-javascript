@@ -149,7 +149,7 @@ function eligibleDevEntry(injectedServeModules: Map<string, string>, id: string,
 
 // The virtual registration module the plugin injects also acts as the sentinel
 // which prevents duplicate injection.
-const REGISTER_MODULE_ID = 'virtual:@sentry/orchestrion-register-integrations';
+export const REGISTER_MODULE_ID = 'virtual:@sentry/orchestrion-register-integrations';
 const RESOLVED_REGISTER_MODULE_ID = `\0${REGISTER_MODULE_ID}`;
 
 /**
