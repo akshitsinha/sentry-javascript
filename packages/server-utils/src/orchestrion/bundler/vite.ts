@@ -126,11 +126,7 @@ function serverEnvironmentOnly(plugin: UnknownPlugin): UnknownPlugin {
  * Returns the cleaned module id when the module is eligible for injection,
  * `null` otherwise. Caller is responsible for recording the injection.
  */
-function eligibleDevEntry(
-  injectedServeModules: Map<string, string>,
-  id: string,
-  environment: string,
-): string | null {
+function eligibleDevEntry(injectedServeModules: Map<string, string>, id: string, environment: string): string | null {
   const cleanId = id.split('?')[0] ?? id;
   const injectedModule = injectedServeModules.get(environment);
 
@@ -171,9 +167,6 @@ const RESOLVED_REGISTER_MODULE_ID = `\0${REGISTER_MODULE_ID}`;
  * eligible source module transformed in each server environment.
  */
 function registerIntegrationsPlugin(): UnknownPlugin {
-  // `createRequire().resolve(REGISTER_MODULE)` would select the package's CJS
-  // export. Resolve the package root instead and explicitly target the ESM
-  // export which is bundled alongside the ESM-only Vite plugin.
   const require = createRequire(import.meta.url);
   const packageRoot = dirname(require.resolve('@sentry/server-utils/package.json'));
   const resolvedRegisterModule = resolve(packageRoot, 'build/esm/orchestrion/index.js');
@@ -197,7 +190,7 @@ function registerIntegrationsPlugin(): UnknownPlugin {
     if (code.includes(REGISTER_MODULE_ID)) return null;
 
     const ms = new MagicString(code);
-    const injection = `import ${JSON.stringify(REGISTER_MODULE_ID)};\n`;
+    const injection = `import '${REGISTER_MODULE_ID}';\n`;
     ms.prepend(injection);
 
     return { code: ms.toString(), map: ms.generateMap({ hires: true }) };
@@ -218,7 +211,7 @@ function registerIntegrationsPlugin(): UnknownPlugin {
       // imports here and let Rollup tree-shake the rest of the ESM module.
       return {
         code: [
-          `import { registerChannelIntegrations } from ${JSON.stringify(resolvedRegisterModule)};`,
+          `import { registerChannelIntegrations } from '${resolvedRegisterModule}';`,
           'registerChannelIntegrations();',
           '',
         ].join('\n'),
@@ -251,11 +244,7 @@ function registerIntegrationsPlugin(): UnknownPlugin {
   };
 }
 
-function bundlerMarkerPlugin({
-  hasRegistrationPlugin,
-}: {
-  hasRegistrationPlugin: boolean;
-}): UnknownPlugin {
+function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin: boolean }): UnknownPlugin {
   const banner = [
     'globalThis.__SENTRY_ORCHESTRION__ = (globalThis.__SENTRY_ORCHESTRION__ || {});',
     'globalThis.__SENTRY_ORCHESTRION__.bundler = true;',
