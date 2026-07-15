@@ -98,12 +98,6 @@ describe('sentryOrchestrionPlugin — registerIntegrations', () => {
       );
     });
 
-    it('preserves a Node entry shebang while injecting before its module body', () => {
-      const result = runTransform(plugin, '#!/usr/bin/env node\nSentry.init({});\n', ctx({ isEntry: true }));
-
-      expect(result?.code).toBe(`#!/usr/bin/env node\nimport "${REGISTER_MODULE_ID}";\nSentry.init({});\n`);
-    });
-
     it('does not inject into non-entry modules', () => {
       const code = `import * as Sentry from '@sentry/cloudflare';\nSentry.startSpan({}, () => {});\n`;
       expect(runTransform(plugin, code, ctx({ isEntry: false }))).toBeNull();

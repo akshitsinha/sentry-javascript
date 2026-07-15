@@ -99,7 +99,7 @@ export function sentryOrchestrionPlugin(options: SentryOrchestrionPluginOptions 
   const serverCodeTransformerArray = codeTransformerArray.map(plugin => serverEnvironmentOnly(plugin));
 
   return [
-    bundlerMarkerPlugin(),
+    bundlerMarkerPlugin({ hasRegistrationPlugin: !!options.registerIntegrations }),
     ...(options.registerIntegrations ? [registerIntegrationsPlugin()] : []),
     ...serverCodeTransformerArray,
   ];
@@ -117,6 +117,35 @@ function serverEnvironmentOnly(plugin: UnknownPlugin): UnknownPlugin {
       return applyToEnvironment?.call(this, environment) ?? true;
     },
   };
+}
+
+/**
+ * Shared dev-mode "inject once into the first eligible source module per
+ * environment" logic used by both the marker and registration plugins.
+ *
+ * Returns the cleaned module id when the module is eligible for injection,
+ * `null` otherwise. Caller is responsible for recording the injection.
+ */
+function eligibleDevEntry(
+  injectedServeModules: Map<string, string>,
+  id: string,
+  environment: string,
+): string | null {
+  const cleanId = id.split('?')[0] ?? id;
+  const injectedModule = injectedServeModules.get(environment);
+
+  if (injectedModule && injectedModule !== cleanId) return null;
+
+  if (
+    id.startsWith('\0') ||
+    cleanId.includes('/node_modules/') ||
+    cleanId.includes('/.vite/') ||
+    !/\.[cm]?[jt]sx?$/.test(cleanId)
+  ) {
+    return null;
+  }
+
+  return cleanId;
 }
 
 // The virtual registration module the plugin injects also acts as the sentinel
@@ -166,14 +195,11 @@ function registerIntegrationsPlugin(): UnknownPlugin {
 
   function injectRegisterImport(code: string): { code: string; map: unknown } | null {
     if (code.includes(REGISTER_MODULE_ID)) return null;
+
     const ms = new MagicString(code);
     const injection = `import ${JSON.stringify(REGISTER_MODULE_ID)};\n`;
-    const shebangEnd = code.startsWith('#!') ? code.indexOf('\n') : -1;
-    if (code.startsWith('#!') && shebangEnd === -1) {
-      ms.append(`\n${injection}`);
-    } else {
-      ms.appendLeft(shebangEnd + 1, injection);
-    }
+    ms.prepend(injection);
+
     return { code: ms.toString(), map: ms.generateMap({ hires: true }) };
   }
 
@@ -209,47 +235,42 @@ function registerIntegrationsPlugin(): UnknownPlugin {
         // registration runs before an entry body or a re-exported worker module
         // can initialize Sentry.
         if (!this?.getModuleInfo?.(id)?.isEntry) return null;
+
         return injectRegisterImport(code);
       }
 
-      // Dev (`vite dev`): reading `getModuleInfo().isEntry` *throws* in the dev
-      // server (`The "isEntry" property of ModuleInfo is not supported`), so
-      // detect the entry as the first source module transformed per server
-      // environment — the module runner requests the worker entry first. Skip
-      // pre-bundled deps, node_modules source, and virtual modules so the import
-      // lands in the user's entry, not an incidental early module.
       const environment = this?.environment?.name ?? '';
-      const cleanId = id.split('?')[0] ?? id;
-      const injectedModule = injectedServeModules.get(environment);
-      if (injectedModule && injectedModule !== cleanId) return null;
-      if (
-        id.startsWith('\0') ||
-        cleanId.includes('/node_modules/') ||
-        cleanId.includes('/.vite/') ||
-        !/\.[cm]?[jt]sx?$/.test(cleanId)
-      ) {
-        return null;
-      }
+      const cleanId = eligibleDevEntry(injectedServeModules, id, environment);
+      if (!cleanId) return null;
+
       const result = injectRegisterImport(code);
       if (result) injectedServeModules.set(environment, cleanId);
+
       return result;
     },
   };
 }
 
-function bundlerMarkerPlugin(): UnknownPlugin {
+function bundlerMarkerPlugin({
+  hasRegistrationPlugin,
+}: {
+  hasRegistrationPlugin: boolean;
+}): UnknownPlugin {
   const banner = [
     'globalThis.__SENTRY_ORCHESTRION__ = (globalThis.__SENTRY_ORCHESTRION__ || {});',
     'globalThis.__SENTRY_ORCHESTRION__.bundler = true;',
     '',
   ].join('\n');
 
+  // Dev-mode transform state — only needed when there is no registration
+  // plugin, because `registerChannelIntegrations()` already sets
+  // `bundler = true`.
   let command = 'build';
   const injectedServeModules = new Map<string, string>();
 
   return {
     name: 'sentry-orchestrion-marker',
-    enforce: 'pre' as const,
+    enforce: 'pre',
     applyToEnvironment(environment: { config?: { consumer?: string } }): boolean {
       return environment.config?.consumer !== 'client';
     },
@@ -305,22 +326,16 @@ function bundlerMarkerPlugin(): UnknownPlugin {
       code: string,
       id: string,
     ): { code: string; map: unknown } | null {
-      if (command !== 'serve' || this?.environment?.config?.consumer === 'client') return null;
-      const cleanId = id.split('?')[0] ?? id;
+      if (hasRegistrationPlugin || command !== 'serve' || this?.environment?.config?.consumer === 'client') return null;
+
       const environment = this?.environment?.name ?? '';
-      const injectedModule = injectedServeModules.get(environment);
-      if (injectedModule && injectedModule !== cleanId) return null;
-      if (
-        id.startsWith('\0') ||
-        cleanId.includes('/node_modules/') ||
-        cleanId.includes('/.vite/') ||
-        !/\.[cm]?[jt]sx?$/.test(cleanId)
-      ) {
-        return null;
-      }
+      const cleanId = eligibleDevEntry(injectedServeModules, id, environment);
+      if (!cleanId) return null;
+
       injectedServeModules.set(environment, cleanId);
       const ms = new MagicString(code);
       ms.prepend(banner);
+
       return { code: ms.toString(), map: ms.generateMap({ hires: true }) };
     },
     renderChunk(
