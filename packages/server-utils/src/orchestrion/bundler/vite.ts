@@ -169,7 +169,8 @@ const RESOLVED_REGISTER_MODULE_ID = `\0${REGISTER_MODULE_ID}`;
 function registerIntegrationsPlugin(): UnknownPlugin {
   const require = createRequire(import.meta.url);
   const packageRoot = dirname(require.resolve('@sentry/server-utils/package.json'));
-  const resolvedRegisterModule = resolve(packageRoot, 'build/esm/orchestrion/index.js');
+  // This avoids any backslash-escaping concerns on Windows
+  const resolvedRegisterModule = resolve(packageRoot, 'build/esm/orchestrion/index.js').replace(/\\/g, '/');
 
   // The slices of Vite's environment-API / Rollup plugin context we read; typed
   // structurally since we don't import `vite`/`rollup` types here (see note at
