@@ -59,16 +59,37 @@ describe('sentryOrchestrionPlugin', () => {
     );
   });
 
-  it('prepends the bundler marker during dev and reinjects it after entry HMR', () => {
+  it('injects the marker as a hoisted import during dev and reinjects it after entry HMR', () => {
     const marker = getMarkerPlugin();
     marker.configResolved({ command: 'serve' });
     const context = { environment: { name: 'worker', config: { consumer: 'server' } } };
 
-    const initial = marker.transform.call(context, 'export default {};\n', '/app/src/index.ts');
-    const updated = marker.transform.call(context, 'export default { updated: true };\n', '/app/src/index.ts?t=123');
+    const initial = marker.transform.call(context, `import './instrument';\n`, '/app/src/index.ts');
+    const updated = marker.transform.call(
+      context,
+      `import './instrument';\nexport const updated = true;\n`,
+      '/app/src/index.ts?t=123',
+    );
 
-    expect(initial?.code).toContain('globalThis.__SENTRY_ORCHESTRION__.bundler = true;');
-    expect(updated?.code).toContain('globalThis.__SENTRY_ORCHESTRION__.bundler = true;');
+    // A prepended import is hoisted before the instrument import, so it runs
+    // before `Sentry.init()` — plain banner statements would not.
+    expect(initial?.code).toContain(`import 'virtual:@sentry/orchestrion-marker';`);
+    expect(initial?.code.indexOf(`virtual:@sentry/orchestrion-marker`)).toBeLessThan(
+      initial?.code.indexOf(`import './instrument'`),
+    );
+    expect(updated?.code).toContain(`import 'virtual:@sentry/orchestrion-marker';`);
+  });
+
+  it('resolves and loads the virtual marker module as a side-effect banner', () => {
+    const marker = getMarkerPlugin();
+
+    expect(marker.resolveId('virtual:@sentry/orchestrion-marker')).toBe('\0virtual:@sentry/orchestrion-marker');
+    expect(marker.resolveId('some-other-module')).toBeNull();
+
+    const loaded = marker.load('\0virtual:@sentry/orchestrion-marker');
+    expect(loaded?.code).toContain('globalThis.__SENTRY_ORCHESTRION__.bundler = true;');
+    expect(loaded?.moduleSideEffects).toBe(true);
+    expect(marker.load('some-other-module')).toBeNull();
   });
 
   describe('configEnvironment (dev dep-optimizer instrumentation)', () => {
