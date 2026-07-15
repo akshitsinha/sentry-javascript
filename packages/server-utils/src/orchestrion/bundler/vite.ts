@@ -245,6 +245,11 @@ function registerIntegrationsPlugin(): UnknownPlugin {
   };
 }
 
+// The virtual marker module the plugin injects in dev also acts as the
+// sentinel which prevents duplicate injection.
+const MARKER_MODULE_ID = 'virtual:@sentry/orchestrion-marker';
+const RESOLVED_MARKER_MODULE_ID = `\0${MARKER_MODULE_ID}`;
+
 function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin: boolean }): UnknownPlugin {
   const banner = [
     'globalThis.__SENTRY_ORCHESTRION__ = (globalThis.__SENTRY_ORCHESTRION__ || {});',
@@ -266,6 +271,13 @@ function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin:
     },
     configResolved(config: { command: string }): void {
       command = config.command;
+    },
+    resolveId(id: string): string | null {
+      return id === MARKER_MODULE_ID ? RESOLVED_MARKER_MODULE_ID : null;
+    },
+    load(id: string): { code: string; moduleSideEffects: boolean } | null {
+      if (id !== RESOLVED_MARKER_MODULE_ID) return null;
+      return { code: banner, moduleSideEffects: true };
     },
     config(): { ssr: { noExternal: string[] } } {
       // Force-bundle every instrumented package so the code transform actually
@@ -320,11 +332,18 @@ function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin:
 
       const environment = this?.environment?.name ?? '';
       const cleanId = eligibleDevEntry(injectedServeModules, id, environment);
-      if (!cleanId) return null;
+      if (!cleanId || code.includes(MARKER_MODULE_ID)) return null;
 
+      // Inject an `import` rather than prepending the banner as plain
+      // statements: `vite dev` serves unbundled ESM, and ES module evaluation
+      // runs a module's imports before its body. Plain statements would run
+      // after an imported instrument file's `Sentry.init()`, so
+      // `isOrchestrionInjected()` would still read false. A prepended import is
+      // hoisted and evaluated in source order — before the instrument import —
+      // so the marker is set first.
       injectedServeModules.set(environment, cleanId);
       const ms = new MagicString(code);
-      ms.prepend(banner);
+      ms.prepend(`import '${MARKER_MODULE_ID}';\n`);
 
       return { code: ms.toString(), map: ms.generateMap({ hires: true }) };
     },
