@@ -14,3 +14,8 @@ export const DB_SYSTEM_VALUE_DYNAMODB = 'dynamodb';
 // Messaging (obsolete OTel convention with no `@sentry/conventions` export, kept for parity)
 export const ATTR_MESSAGING_DESTINATION_KIND = 'messaging.destination_kind';
 export const MESSAGING_DESTINATION_KIND_VALUE_TOPIC = 'topic';
+
+// Bedrock (gen_ai)
+export const ATTR_GEN_AI_REQUEST_STOP_SEQUENCES = 'gen_ai.request.stop_sequences';
+export const GEN_AI_OPERATION_NAME_VALUE_CHAT = 'chat';
+export const GEN_AI_SYSTEM_VALUE_AWS_BEDROCK = 'aws.bedrock';
