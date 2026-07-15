@@ -11,6 +11,7 @@
     "test": "playwright test",
     "clean": "npx rimraf node_modules **/node_modules pnpm-lock.yaml **/dist *-debug.log test-results",
     "test:build": "pnpm install && pnpm build",
+    "test:build:v12_7": "cd firestore-app && pnpm add firebase@12.7.0 -E && cd .. && pnpm install && pnpm build",
     "test:assert": "pnpm firebase emulators:exec --project demo-functions 'pnpm test'",
     "test:assert:orchestrion": "E2E_ORCHESTRION=true pnpm test:assert"
   },
@@ -33,6 +34,11 @@
       {
         "assert-command": "pnpm test:assert:orchestrion",
         "label": "node-firebase (Orchestrion)"
+      },
+      {
+        "build-command": "pnpm test:build:v12_7",
+        "assert-command": "pnpm test:assert:orchestrion",
+        "label": "node-firebase (Orchestrion, v12.7.0)"
       }
     ]
   }

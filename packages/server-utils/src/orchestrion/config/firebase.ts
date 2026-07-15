@@ -3,16 +3,23 @@ import type { InstrumentationConfig } from '@apm-js-collab/code-transformer';
 // firebase 9+ ships firestore as `@firebase/firestore` (matches the OTel integration's range). Only the
 // `lite` SDK exposes the free `addDoc`/`getDocs`/`setDoc`/`deleteDoc` functions we trace, and only the
 // two `node` entry points (CJS `require`, ESM `import`) are reachable from `@sentry/node`; the
-// browser/react-native builds are irrelevant here. Each is a top-level `function <name>` declaration, so
-// `functionName` matches. They return promises, so `Auto` settles the span on `asyncEnd`.
-const FIRESTORE_VERSION_RANGE = '>=3.0.0 <5';
-const FIRESTORE_FILES = ['dist/lite/index.node.cjs.js', 'dist/lite/index.node.mjs'];
+// browser/react-native builds are irrelevant here. They return promises, so `Auto` settles the span on
+// `asyncEnd`.
+//
+// Where those declarations live moves with the firestore version, so we register two disjoint ranges
+// below. Up to 4.10 they are top-level `function <name>` declarations in the `node` entry files. From 4.10
+// the lite build code-splits them into a single content-hashed shared chunk (`common-<hash>.node.*`) and
+// leaves the entry files re-export-only, so we match the chunk by a regex on its hashed name. The ranges
+// must not overlap: matching the re-export-only entry file would make orchestrion throw "failed to find
+// injection points". Regex `filePath` matching requires the code-transformer (orchestrion) >=0.17.0.
 const FIRESTORE_OPERATIONS = [
   { functionName: 'addDoc', channelName: 'add-doc' },
   { functionName: 'getDocs', channelName: 'get-docs' },
   { functionName: 'setDoc', channelName: 'set-doc' },
   { functionName: 'deleteDoc', channelName: 'delete-doc' },
 ] as const;
+const FIRESTORE_ENTRY_FILES = ['dist/lite/index.node.cjs.js', 'dist/lite/index.node.mjs'];
+const FIRESTORE_CHUNK_FILES = [/^dist\/lite\/common-[^/]+\.node\.cjs\.js$/, /^dist\/lite\/common-[^/]+\.node\.mjs$/];
 
 // firebase-functions v2 (CJS-only). The `onX` provider functions *register* a handler and return a
 // synchronous cloud function, so `Sync` is required — the span itself is opened later, when the handler
@@ -58,10 +65,19 @@ const FUNCTIONS_TRIGGERS = [
 ] as const;
 
 export const firebaseConfig = [
-  ...FIRESTORE_FILES.flatMap(filePath =>
+  // v3.0.0 - v4.10.0
+  ...FIRESTORE_ENTRY_FILES.flatMap(filePath =>
     FIRESTORE_OPERATIONS.map(({ functionName, channelName }) => ({
       channelName,
-      module: { name: '@firebase/firestore', versionRange: FIRESTORE_VERSION_RANGE, filePath },
+      module: { name: '@firebase/firestore', versionRange: '>=3.0.0 <4.10.0', filePath },
+      functionQuery: { functionName, kind: 'Auto' as const },
+    })),
+  ),
+  // v4.10.0 - v5
+  ...FIRESTORE_CHUNK_FILES.flatMap(filePath =>
+    FIRESTORE_OPERATIONS.map(({ functionName, channelName }) => ({
+      channelName,
+      module: { name: '@firebase/firestore', versionRange: '>=4.10.0 <5', filePath },
       functionQuery: { functionName, kind: 'Auto' as const },
     })),
   ),
