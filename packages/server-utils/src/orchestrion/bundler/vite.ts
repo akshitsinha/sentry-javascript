@@ -16,7 +16,6 @@ type UnknownPlugin = any;
 import codeTransformerEsbuild from '@apm-js-collab/code-transformer-bundler-plugins/esbuild';
 import codeTransformerRollup from '@apm-js-collab/code-transformer-bundler-plugins/rollup';
 import codeTransformer from '@apm-js-collab/code-transformer-bundler-plugins/vite';
-import { consoleSandbox } from '@sentry/core';
 import MagicString from 'magic-string';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
@@ -93,17 +92,12 @@ export interface SentryOrchestrionPluginOptions {
  * ```
  */
 export function sentryOrchestrionPlugin(options: SentryOrchestrionPluginOptions = {}): UnknownPlugin[] {
-  const codeTransformerPlugins = codeTransformer({
-    instrumentations: SENTRY_INSTRUMENTATIONS,
-    // Only the marker-based registration path (`registerIntegrations`) surfaces
-    // the failed-transform warning; the runtime `--import` path never does, so
-    // we avoid emitting the banner when it wouldn't be consumed.
-    ...(options.registerIntegrations ? { injectDiagnostics: makeFailedModulesBanner() } : {}),
-  });
+  const codeTransformerPlugins = codeTransformer({ instrumentations: SENTRY_INSTRUMENTATIONS });
   const codeTransformerArray: UnknownPlugin[] = Array.isArray(codeTransformerPlugins)
     ? codeTransformerPlugins
     : [codeTransformerPlugins];
   const serverCodeTransformerArray = codeTransformerArray.map(plugin => serverEnvironmentOnly(plugin));
+
   return [
     bundlerMarkerPlugin(),
     ...(options.registerIntegrations ? [registerIntegrationsPlugin()] : []),
@@ -115,50 +109,13 @@ export function sentryOrchestrionPlugin(options: SentryOrchestrionPluginOptions 
 function serverEnvironmentOnly(plugin: UnknownPlugin): UnknownPlugin {
   const applyToEnvironment = (plugin as { applyToEnvironment?: (this: unknown, environment: unknown) => unknown })
     .applyToEnvironment;
+
   return {
     ...plugin,
     applyToEnvironment(this: unknown, environment: { config?: { consumer?: string } }): unknown {
       if (environment.config?.consumer === 'client') return false;
       return applyToEnvironment?.call(this, environment) ?? true;
     },
-  };
-}
-
-/**
- * Builds the `injectDiagnostics` callback for the code transformer: it records
- * the packages whose transform failed onto the global orchestrion marker, so
- * `getRegisteredChannelIntegrations()` can warn about them at runtime.
- *
- * A failed transform also gets a build-time warning: the package IS in the
- * bundle but its diagnostics channels are not, so its integration is wired up
- * yet records no spans. The callback runs once per emitted chunk, hence the
- * once-guard on the warning.
- *
- * The transformer runs the callback at `renderChunk` and prepends the returned
- * string to each emitted chunk. That's exactly the phase that can't host a
- * bundled `import` (see {@link registerIntegrationsPlugin}), but a
- * self-contained assignment like this one is fine there — it needs nothing
- * from the module graph. Every chunk receives the same complete list (the
- * graph is fully transformed before any chunk renders), so the repeated
- * assignment is idempotent.
- */
-function makeFailedModulesBanner(): (diagnostics: { failedModules: string[] }) => string {
-  let warnedFailedModules = false;
-  return ({ failedModules }) => {
-    if (failedModules.length && !warnedFailedModules) {
-      warnedFailedModules = true;
-      consoleSandbox(() => {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[Sentry] The orchestrion code transform failed for: ${failedModules.join(', ')}. ` +
-            'These packages are bundled without diagnostics channels, so Sentry will not record spans for them.',
-        );
-      });
-    }
-    return (
-      'globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};' +
-      `globalThis.__SENTRY_ORCHESTRION__.failedModules=${JSON.stringify(failedModules)};\n`
-    );
   };
 }
 
@@ -171,11 +128,10 @@ const RESOLVED_REGISTER_MODULE_ID = `\0${REGISTER_MODULE_ID}`;
  * Injects a virtual registration module into the app's server entry.
  *
  * The import is added during `transform`, while Rollup can still include it in
- * the module graph. An import returned from `injectDiagnostics` at
- * `renderChunk` would remain unresolved. The virtual module imports an absolute
- * ESM path because the entry may itself be virtual, with no directory from
- * which to resolve a bare specifier. This also avoids bundling a second,
- * CommonJS copy of `@sentry/core`.
+ * the module graph. The virtual module imports an absolute ESM path because the
+ * entry may itself be virtual, with no directory from which to resolve a bare
+ * specifier. This also avoids bundling a second, CommonJS copy of
+ * `@sentry/core`.
  *
  * All factories are registered and every one is instantiated at runtime; there
  * is no narrowing to the packages the app actually bundled (and no tree-shaking
@@ -312,6 +268,7 @@ function bundlerMarkerPlugin(): UnknownPlugin {
     },
     configEnvironment(this: { meta?: { rolldownVersion?: string } } | undefined, name: string): unknown {
       if (name === 'client') return undefined;
+
       // In dev, environments that pre-bundle their dependencies (e.g.
       // `@cloudflare/vite-plugin` worker environments set
       // `optimizeDeps.noDiscovery: false`) load instrumented packages through
@@ -334,6 +291,7 @@ function bundlerMarkerPlugin(): UnknownPlugin {
           },
         };
       }
+
       return {
         optimizeDeps: {
           esbuildOptions: {

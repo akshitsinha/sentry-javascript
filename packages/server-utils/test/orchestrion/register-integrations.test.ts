@@ -1,5 +1,4 @@
-import { debug } from '@sentry/core';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getRegisteredChannelIntegrations } from '../../src/orchestrion/detect';
 import { channelIntegrations, registerChannelIntegrations } from '../../src/orchestrion/index';
 
@@ -42,38 +41,6 @@ describe('channel-integration registry', () => {
       expect(first?.name).toBe(second?.name);
     });
 
-    it('warns about modules whose build-time transform failed, once per isolate', () => {
-      const warnSpy = vi.spyOn(debug, 'warn').mockImplementation(() => undefined);
-
-      globalThis.__SENTRY_ORCHESTRION__ = {
-        failedModules: ['mysql'],
-        integrations: [() => ({ name: 'MySQL' })],
-      };
-
-      // Cloudflare re-reads the marker on every request; the warning must not
-      // repeat, so a second call stays silent.
-      getRegisteredChannelIntegrations();
-      getRegisteredChannelIntegrations();
-
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('mysql'));
-
-      warnSpy.mockRestore();
-    });
-
-    it('does not warn when the failed-module list is empty', () => {
-      const warnSpy = vi.spyOn(debug, 'warn').mockImplementation(() => undefined);
-
-      globalThis.__SENTRY_ORCHESTRION__ = {
-        failedModules: [],
-        integrations: [() => ({ name: 'Postgres' })],
-      };
-
-      getRegisteredChannelIntegrations();
-      expect(warnSpy).not.toHaveBeenCalled();
-
-      warnSpy.mockRestore();
-    });
   });
 
   describe('registerChannelIntegrations', () => {
