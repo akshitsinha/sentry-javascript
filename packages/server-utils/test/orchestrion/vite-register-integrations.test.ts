@@ -173,15 +173,14 @@ describe('sentryOrchestrionPlugin — registerIntegrations', () => {
       expect(ssr?.code).toContain(REGISTER_MODULE_ID);
     });
 
-    it('skips pre-bundled deps, node_modules source, and virtual modules', () => {
-      for (const id of [
-        '/app/node_modules/.vite/deps_worker/mysql.js',
-        '/app/node_modules/mysql/index.js',
-        '\0virtual:some-module',
-      ]) {
-        const plugin = makeServePlugin();
-        expect(runTransform(plugin, 'export default {};\n', serveCtx({ name: 'worker' }), id)).toBeNull();
-      }
+    it.each([
+      { label: 'pre-bundled deps', id: '/app/node_modules/.vite/deps_worker/mysql.js' },
+      { label: 'node_modules source', id: '/app/node_modules/mysql/index.js' },
+      { label: 'virtual modules', id: '\0virtual:some-module' },
+    ])('skips $label', ({ id }) => {
+      const plugin = makeServePlugin();
+
+      expect(runTransform(plugin, 'export default {};\n', serveCtx({ name: 'worker' }), id)).toBeNull();
     });
 
     it('does not inject into client environments', () => {
