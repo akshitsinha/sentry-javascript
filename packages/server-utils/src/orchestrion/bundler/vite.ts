@@ -19,6 +19,7 @@ import codeTransformer from '@apm-js-collab/code-transformer-bundler-plugins/vit
 import MagicString from 'magic-string';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
+import type { InstrumentationConfig } from '@apm-js-collab/code-transformer';
 import { instrumentedModuleNames } from '../config';
 import type { PluginOptions } from './options';
 import { orchestrionTransformOptions } from './options';
@@ -102,7 +103,11 @@ export function sentryOrchestrionPlugin(options: SentryOrchestrionPluginOptions 
   const serverCodeTransformerArray = codeTransformerArray.map(plugin => serverEnvironmentOnly(plugin));
 
   return [
-    bundlerMarkerPlugin({ hasRegistrationPlugin: !!options.registerIntegrations, transformOptions }),
+    bundlerMarkerPlugin({
+      hasRegistrationPlugin: !!options.registerIntegrations,
+      instrumentations: options.instrumentations,
+      transformOptions,
+    }),
     ...(options.registerIntegrations ? [registerIntegrationsPlugin()] : []),
     ...serverCodeTransformerArray,
   ];
@@ -255,9 +260,11 @@ const RESOLVED_MARKER_MODULE_ID = `\0${MARKER_MODULE_ID}`;
 
 function bundlerMarkerPlugin({
   hasRegistrationPlugin,
+  instrumentations,
   transformOptions,
 }: {
   hasRegistrationPlugin: boolean;
+  instrumentations?: InstrumentationConfig[];
   transformOptions: ReturnType<typeof orchestrionTransformOptions>;
 }): UnknownPlugin {
   const banner = [
@@ -296,7 +303,7 @@ function bundlerMarkerPlugin({
       // diagnostics_channel calls never get injected. Vite merges array
       // `noExternal` entries with the user's config, so we don't overwrite
       // their additions.
-      return { ssr: { noExternal: instrumentedModuleNames(transformOptions.instrumentations) } };
+      return { ssr: { noExternal: instrumentedModuleNames(instrumentations) } };
     },
     configEnvironment(this: { meta?: { rolldownVersion?: string } } | undefined, name: string): unknown {
       if (name === 'client') return undefined;
