@@ -19,14 +19,16 @@ import codeTransformer from '@apm-js-collab/code-transformer-bundler-plugins/vit
 import MagicString from 'magic-string';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
-import { INSTRUMENTED_MODULE_NAMES, SENTRY_INSTRUMENTATIONS } from '../config';
+import { instrumentedModuleNames } from '../config';
+import type { PluginOptions } from './options';
+import { orchestrionTransformOptions } from './options';
 
 // `vite` types live in the package's ESM-only subpath; under Node16 module
 // resolution with TS treating @sentry/server-utils as CJS, importing them produces a
 // false positive. We don't need the runtime value for typing — `UnknownPlugin`
 // is sufficient — so we omit the import entirely.
 
-export interface SentryOrchestrionPluginOptions {
+export interface SentryOrchestrionPluginOptions extends PluginOptions {
   /**
    * Whether to register the SDK's channel-subscriber integrations.
    *
@@ -92,14 +94,15 @@ export interface SentryOrchestrionPluginOptions {
  * ```
  */
 export function sentryOrchestrionPlugin(options: SentryOrchestrionPluginOptions = {}): UnknownPlugin[] {
-  const codeTransformerPlugins = codeTransformer({ instrumentations: SENTRY_INSTRUMENTATIONS });
+  const transformOptions = orchestrionTransformOptions(options);
+  const codeTransformerPlugins = codeTransformer(transformOptions);
   const codeTransformerArray: UnknownPlugin[] = Array.isArray(codeTransformerPlugins)
     ? codeTransformerPlugins
     : [codeTransformerPlugins];
   const serverCodeTransformerArray = codeTransformerArray.map(plugin => serverEnvironmentOnly(plugin));
 
   return [
-    bundlerMarkerPlugin({ hasRegistrationPlugin: !!options.registerIntegrations }),
+    bundlerMarkerPlugin({ hasRegistrationPlugin: !!options.registerIntegrations, transformOptions }),
     ...(options.registerIntegrations ? [registerIntegrationsPlugin()] : []),
     ...serverCodeTransformerArray,
   ];
@@ -250,7 +253,13 @@ function registerIntegrationsPlugin(): UnknownPlugin {
 const MARKER_MODULE_ID = 'virtual:@sentry/orchestrion-marker';
 const RESOLVED_MARKER_MODULE_ID = `\0${MARKER_MODULE_ID}`;
 
-function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin: boolean }): UnknownPlugin {
+function bundlerMarkerPlugin({
+  hasRegistrationPlugin,
+  transformOptions,
+}: {
+  hasRegistrationPlugin: boolean;
+  transformOptions: ReturnType<typeof orchestrionTransformOptions>;
+}): UnknownPlugin {
   const banner = [
     'globalThis.__SENTRY_ORCHESTRION__ = (globalThis.__SENTRY_ORCHESTRION__ || {});',
     'globalThis.__SENTRY_ORCHESTRION__.bundler = true;',
@@ -287,7 +296,7 @@ function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin:
       // diagnostics_channel calls never get injected. Vite merges array
       // `noExternal` entries with the user's config, so we don't overwrite
       // their additions.
-      return { ssr: { noExternal: INSTRUMENTED_MODULE_NAMES } };
+      return { ssr: { noExternal: instrumentedModuleNames(transformOptions.instrumentations) } };
     },
     configEnvironment(this: { meta?: { rolldownVersion?: string } } | undefined, name: string): unknown {
       if (name === 'client') return undefined;
@@ -309,7 +318,7 @@ function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin:
         return {
           optimizeDeps: {
             rolldownOptions: {
-              plugins: [codeTransformerRollup({ instrumentations: SENTRY_INSTRUMENTATIONS })],
+              plugins: [codeTransformerRollup(transformOptions)],
             },
           },
         };
@@ -318,7 +327,7 @@ function bundlerMarkerPlugin({ hasRegistrationPlugin }: { hasRegistrationPlugin:
       return {
         optimizeDeps: {
           esbuildOptions: {
-            plugins: [codeTransformerEsbuild({ instrumentations: SENTRY_INSTRUMENTATIONS })],
+            plugins: [codeTransformerEsbuild(transformOptions)],
           },
         },
       };
