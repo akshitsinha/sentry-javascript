@@ -40,7 +40,6 @@ describe('channel-integration registry', () => {
       expect(first).not.toBe(second);
       expect(first?.name).toBe(second?.name);
     });
-
   });
 
   describe('registerChannelIntegrations', () => {

@@ -86,7 +86,7 @@ describe('sentryOrchestrionPlugin — registerIntegrations', () => {
     it('injects the virtual registration import into the entry module', () => {
       const result = runTransform(plugin, 'export default {};\n', ctx({ isEntry: true }));
 
-      expect(result?.code).toContain(`import "${REGISTER_MODULE_ID}";`);
+      expect(result?.code).toContain(`import '${REGISTER_MODULE_ID}';`);
       expect(result?.map).toBeTruthy();
     });
 
@@ -138,7 +138,7 @@ describe('sentryOrchestrionPlugin — registerIntegrations', () => {
       const plugin = makeServePlugin();
       const result = runTransform(plugin, 'export default {};\n', serveCtx(), '/app/src/index.ts');
 
-      expect(result?.code).toContain(`import "${REGISTER_MODULE_ID}";`);
+      expect(result?.code).toContain(`import '${REGISTER_MODULE_ID}';`);
     });
 
     it('injects only once per environment', () => {
